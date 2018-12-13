@@ -1,0 +1,9 @@
+{
+  "name": "Github comment badges",
+  "namespace": "https://github.com/matthizou",
+  "version": "1.1",
+  "description": "Add badges to comment icons in PR list. Periodically and transparently refreshes those badges",
+  "author": "Matt",
+  "match": ["https://github.com/*", "https://source.xing.com/*"],
+  "grant": ["GM.getValue", "GM.setValue", "GM.xmlHttpRequest"]
+}

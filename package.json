@@ -1,0 +1,30 @@
+{
+  "name": "github-comment-badges",
+  "version": "1.0.0",
+  "main": "./src/index.js",
+  "repository": "https://github.com/matthizou/github-comment-badges.git",
+  "author": "Matt <matthizou@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "start": "webpack --mode=development",
+    "build": "rollup --config config/rollup/rollup.config.js"
+  },
+  "devDependencies": {
+    "eslint": "^5.10.0",
+    "eslint-config-airbnb-base": "^13.1.0",
+    "eslint-config-prettier": "^3.3.0",
+    "eslint-plugin-import": "^2.14.0",
+    "eslint-plugin-prettier": "^3.0.0",
+    "prettier": "^1.15.3",
+    "rollup": "^0.67.4",
+    "rollup-pluginutils": "^2.3.3",
+    "webpack": "^4.27.1",
+    "webpack-cli": "^3.1.2"
+  },
+  "eslintConfig": {
+    "extends": "./config/eslint/eslint.config.js"
+  },
+  "files": [
+    "dist"
+  ]
+}
