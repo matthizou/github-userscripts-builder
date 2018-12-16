@@ -1,35 +1,12 @@
-import { REFRESH_INTERVAL_PERIOD } from './config'
-import { markElement, waitForUnmarkedElement } from '../../common/markers'
-import { parseListPageHTML } from './pageParsers'
-import {
-    getInfoFromUrl,
-    insertAfter,
-    getStoreData,
-    $,
-} from '../../common/utils'
-import { isDetailsPage, isListPage } from '../../common/sections'
-
-console.log('Starting extension: Github comment Badges')
-
-/** Fetch counts info from the server and update the list page */
-export function fetchCountData() {
-    const url = window.location.href
-    GM.xmlHttpRequest({
-        method: 'GET',
-        url,
-        onload: response => {
-            const newCountData = parseListPageHTML(response.responseText)
-            processListPage(newCountData)
-        },
-    })
-}
+import { getRepoData, setRepoData } from '../../../common/store'
+import { insertAfter, $ } from '../../../common/utils'
 
 /**
  * Processing function for the list pages.
  * Compare displayed count data to stored count data, adding badges and extra styling to the comments container of each row.
  * @params {Object} fetchedData - Optional. Fresh data from the server.
  */
-async function processListPage(fetchedData) {
+export async function process(fetchedData) {
     const repoData = await getRepoData()
     const dataToUpdate = {}
 
@@ -116,72 +93,6 @@ async function processListPage(fetchedData) {
     }
 }
 
-/**
- * Processing function for the detail pages.
- * Looks for the count number and stores it
- */
-async function processDetailsPage() {
-    const repoData = await getRepoData()
-    const { section, itemId } = getInfoFromUrl()
-
-    let text
-    let messageCount
-
-    if (section === 'pull') {
-        text = document.querySelector('#conversation_tab_counter').innerText
-        messageCount = parseInt(text, 10)
-    } else if (section === 'issues') {
-        text = $('a.author')
-            .map(x => x.parentNode.innerText)
-            .find(x => x.indexOf('comment') > 0)
-        text = /([0-9]+) comment/.exec(text)[1] // eslint-disable-line prefer-destructuring
-        messageCount = parseInt(text, 10)
-    }
-
-    // Compare current number of messages in the PR to the one stored from the last visit
-    // Update it if they don't match
-    if (Number.isInteger(messageCount)) {
-        const previousMessageCount = repoData[itemId]
-        if (messageCount !== previousMessageCount) {
-            setRepoData({ ...repoData, [itemId]: messageCount })
-        }
-    }
-}
-
-const selectorEnum = {
-    LIST: '#js-issues-toolbar',
-    DETAILS: '#discussion_bucket',
-}
-
-let refreshIntervalId
-
-export async function applyExtension() {
-    // Element that signals that we are on such or such page
-    let landmarkElement
-    if (isListPage()) {
-        landmarkElement = await waitForUnmarkedElement(selectorEnum.LIST)
-        markElement(landmarkElement)
-        processListPage()
-        if (!refreshIntervalId) {
-            refreshIntervalId = setInterval(
-                fetchCountData,
-                REFRESH_INTERVAL_PERIOD,
-            )
-        }
-    } else if (isDetailsPage()) {
-        landmarkElement = await waitForUnmarkedElement(selectorEnum.DETAILS, {
-            priority: 'low',
-        })
-        markElement(landmarkElement)
-        processDetailsPage()
-        clearInterval(refreshIntervalId)
-        refreshIntervalId = null
-    } else {
-        clearInterval(refreshIntervalId)
-        refreshIntervalId = null
-    }
-}
-
 function toggleUnreadStyle(container, isUnread) {
     const unreadColor = '#c6cad0'
     if (isUnread) {
@@ -235,19 +146,4 @@ function toggleMessageNotificationIcon({
         // Remove existing element
         container.removeChild(notification)
     }
-}
-
-async function getRepoData() {
-    const key = getDataKey()
-    return getStoreData(key)
-}
-
-async function setRepoData(data) {
-    const key = getDataKey()
-    return GM.setValue(key, data)
-}
-
-function getDataKey() {
-    const { repoOwner, repo } = getInfoFromUrl()
-    return `${repoOwner}/${repo}`
 }

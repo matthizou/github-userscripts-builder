@@ -7,6 +7,8 @@ module.exports = {
     'no-console': 1,
     'import/prefer-default-export': 0,
     'no-use-before-define': 0,
+    'no-restricted-globals': 0,
+    'no-unused-vars': 1,
     'prettier/prettier': [
       'error',
       {

@@ -1,3 +1,8 @@
+/** Shorthand for querySelectorAll, JQuery style */
+export function $(selector, element = document) {
+    return Array.from(element.querySelectorAll(selector))
+}
+
 /** Breakdown Github's URL into data */
 export function getInfoFromUrl() {
     const [repoOwner, repo, section, itemId] = window.location.pathname
@@ -11,15 +16,14 @@ export function getInfoFromUrl() {
     }
 }
 
-/** Get data from data store */
-export async function getStoreData(namespace) {
-    const data = await GM.getValue(namespace)
-    return data || {}
-}
-
-/** Shorthand for querySelectorAll, JQuery style */
-export function $(selector, element = document) {
-    return Array.from(element.querySelectorAll(selector))
+export async function getPage(url) {
+    return new Promise(resolve =>
+        GM.xmlHttpRequest({
+            method: 'GET',
+            url,
+            onload: resolve,
+        }),
+    )
 }
 
 /** Insert in DOM the specified node right after the specified reference node */

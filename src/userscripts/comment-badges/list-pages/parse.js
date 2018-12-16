@@ -4,7 +4,7 @@
  * It comes with its own overheads (such as providing an authentication token, instable API, etc.),
  * and I find that for non-intensive queries such as here, scraping the HTML is more versatile and robust.
  * */
-export function parseListPageHTML(pageHtml) {
+export function parse(pageHtml) {
     const rowsInfo = []
     let startSearchIndex
     let rowHtml

@@ -2,14 +2,9 @@
     'use strict';
 
     /* ---------
-     * config.js
-     * --------- */
-    // Change this value to poll more often
-    const REFRESH_INTERVAL_PERIOD$1 = 90000;
-
-    /* ---------
      * utils.js
      * --------- */
+
     /** Breakdown Github's URL into data */
     function getInfoFromUrl() {
         const [repoOwner, repo, section, itemId] = window.location.pathname
@@ -23,20 +18,14 @@
         }
     }
 
-    /** Get data from data store */
-    async function getStoreData(namespace) {
-        const data = await GM.getValue(namespace);
-        return data || {}
-    }
-
-    /** Shorthand for querySelectorAll, JQuery style */
-    function $(selector, element = document) {
-        return Array.from(element.querySelectorAll(selector))
-    }
-
-    /** Insert in DOM the specified node right after the specified reference node */
-    function insertAfter(newNode, referenceNode) {
-        referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
+    async function getPage(url) {
+        return new Promise(resolve =>
+            GM.xmlHttpRequest({
+                method: 'GET',
+                url,
+                onload: resolve,
+            }),
+        )
     }
 
     /**
@@ -86,25 +75,79 @@
      * markers.js
      * --------- */
 
-    const PROCESSED_FLAG = 'comment_badges_extension_flag';
-
-    function markElement(element) {
-        element.dataset[PROCESSED_FLAG] = true; // eslint-disable-line
+    function markElement(element, marker) {
+        if (!marker) throw new Error('Marker is required!')
+        element.dataset[marker] = true; // eslint-disable-line
     }
 
-    function isMarked(element) {
-        return element.dataset[PROCESSED_FLAG]
+    function isMarked(element, marker) {
+        return !!element.dataset[marker]
     }
 
-    async function waitForUnmarkedElement(selector, options = {}) {
+    async function waitForUnmarkedElement(selector, marker, options = {}) {
         return waitFor(selector, {
             ...options,
-            condition: element => !isMarked(element),
+            condition: element => !isMarked(element, marker),
         })
     }
 
     /* ---------
-     * pageParsers.js
+     * sections.js
+     * --------- */
+
+    const GITHUB_PAGES_TESTER = {
+        PR_LIST: ({ section }) => section === 'pulls',
+        PR_DETAILS: ({ section }) => section === 'pull',
+        ISSUE_LIST: ({ section, itemId }) => section === 'issues' && !itemId,
+        ISSUE_DETAILS: ({ section, itemId }) => section === 'issues' && itemId,
+    };
+
+    function getCurrentPageId() {
+        const pageInfo = getInfoFromUrl();
+        const keyValueResult = Object.entries(GITHUB_PAGES_TESTER).find(
+            ([, tester]) => tester(pageInfo),
+        );
+        return keyValueResult ? keyValueResult[0] : null
+        // const pageId = pagesToWatch.find(id => GITHUB_PAGES_TESTER[id]())
+    }
+
+    const selectorEnum = {
+        PR_LIST: '#js-issues-toolbar',
+        ISSUES_LIST: '#js-issues-toolbar',
+        PR_DETAILS: '#discussion_bucket',
+        ISSUE_DETAILS: '#discussion_bucket',
+    };
+
+    // Function applied when the URL changed
+    async function waitForPageToLoad() {
+        const pageId = getCurrentPageId();
+        if (pageId) {
+            // At least one script cares about this page
+            // Wait for the page to be loaded, by waiting for a specific element
+            const marker = 'some_marker';
+            // Element that signals that we are on such or such page
+            const landmarkElement = await waitForUnmarkedElement(
+                selectorEnum[pageId],
+                marker,
+            );
+            markElement(landmarkElement, marker);
+        } else {
+            // No script cares about this page
+            console.log('No one gives a shit about this page');
+        }
+        return pageId
+    }
+
+    /* ---------
+     * store.js
+     * --------- */
+
+    /* ---------
+     * process.js
+     * --------- */
+
+    /* ---------
+     * parse.js
      * --------- */
     /**
      * Extract the count data from the HTML string representation of the page
@@ -112,7 +155,7 @@
      * It comes with its own overheads (such as providing an authentication token, instable API, etc.),
      * and I find that for non-intensive queries such as here, scraping the HTML is more versatile and robust.
      * */
-    function parseListPageHTML(pageHtml) {
+    function parse(pageHtml) {
         const rowsInfo = [];
         let startSearchIndex;
         let rowHtml;
@@ -148,293 +191,148 @@
     }
 
     /* ---------
-     * sections.js
+     * configs.js
      * --------- */
 
-    /** Check page url and returns whether or not we are in a list page (pull request/issues lists ) */
-    function isListPage() {
-      const { section, itemId } = getInfoFromUrl();
-      return section === 'pulls' || (section === 'issues' && !itemId)
-    }
-
-    /** Check current url and returns whether or not we are in a list page (pull request/issues lists ) */
-    function isDetailsPage() {
-      const { section, itemId } = getInfoFromUrl();
-      return section === 'pull' || (section === 'issues' && itemId)
-    }
-
-    /* ---------
-     * core.js
-     * --------- */
-
-    console.log('Starting extension: Github comment Badges');
-
-    /** Fetch counts info from the server and update the list page */
-    function fetchCountData() {
-        const url = window.location.href;
-        GM.xmlHttpRequest({
-            method: 'GET',
-            url,
-            onload: response => {
-                const newCountData = parseListPageHTML(response.responseText);
-                processListPage(newCountData);
+    const configs = [
+        {
+            PR_LIST: {
+                // Function executed when page is loaded
+                process: () => console.log('PR_LIST page loaded !'),
+                // interval: {
+                //     frequency: 2000,
+                //     callback: () => console.log('hello from interval'),
+                // },
+                // Get full page html from server regularly. Group
+                poll: {
+                    url: 'self',
+                    frequency: 3000,
+                    // Function
+                    parse: html => {
+                        // console.log(html.responseText.substring(1, 100))
+                        const results = parse(html);
+                        console.log(`from polling: ${JSON.stringify(results)}`);
+                    },
+                },
             },
-        });
-    }
+        },
+        {
+            PR_LIST: {
+                poll: {
+                    url: 'self',
+                    frequency: 3000,
+                    // Function
+                    parse: html => {
+                        console.log(
+                            `HELLO from 2nd polling ${html.substring(0, 100)}`,
+                        );
+                    },
+                },
+            },
+            PR_DETAILS: {
+                // Function executed when page is loaded
+                process: () => console.log('PR_DETAILS page loaded !'),
+                interval: {
+                    frequency: 1000,
+                    callback: () => console.log('hello from other interval'),
+                },
+            },
+        },
+    ];
 
-    /**
-     * Processing function for the list pages.
-     * Compare displayed count data to stored count data, adding badges and extra styling to the comments container of each row.
-     * @params {Object} fetchedData - Optional. Fresh data from the server.
-     */
-    async function processListPage(fetchedData) {
-        const repoData = await getRepoData();
-        const dataToUpdate = {};
+    // const pagesToWatch = configs
+    //     .reduce((res, config) => res.concat(Object.keys(config)), [])
+    //     // Remove dupplicated
+    //     .filter((element, index, array) => array.indexOf(element) === index)
 
-        $('.repository-content [data-id]').forEach(row => {
-            const pullRequestId = row.id.replace('issue_', '');
-            const icon = row.querySelector('.octicon-comment');
-
-            let container;
-            let displayedMessageCount;
-            if (icon) {
-                container = icon.parentNode;
-                displayedMessageCount = parseInt(container.innerText, 10); // todo : WEAK. Use aria-label instead
-            } else {
-                container = row.querySelector('.float-right .float-right');
-                displayedMessageCount = 0;
-            }
-
-            const countFromServer =
-                fetchedData && fetchedData[pullRequestId] >= 0
-                    ? fetchedData[pullRequestId]
-                    : undefined;
-            const messageCount =
-                countFromServer !== undefined
-                    ? countFromServer
-                    : displayedMessageCount;
-
-            if (displayedMessageCount !== messageCount) {
-                // The displayed count is outdated, update it
-                if (messageCount === 0) {
-                    // The count has decreased to 0, remove icon
-                    container.innerHTML = '';
-                } else if (displayedMessageCount === 0) {
-                    // We need to add the icon
-                    container.innerHTML = `
-<a href="/facebook/react/pull/14301" class="muted-link" aria-label="${messageCount} comments" style="position: relative;">
-<svg class="octicon octicon-comment v-align-middle" viewBox="0 0 16 16" version="1.1" width="16" height="16" aria-hidden="true"><path fill-rule="evenodd" d="M14 1H2c-.55 0-1 .45-1 1v8c0 .55.45 1 1 1h2v3.5L7.5 11H14c.55 0 1-.45 1-1V2c0-.55-.45-1-1-1zm0 9H7l-2 2v-2H2V2h12v8z"></path></svg><i data-id="unread-notification" style="position: absolute; z-index: 2; border-radius: 50%; color: rgb(255, 255, 255); width: 8px; height: 8px; top: 0px; left: 9px; border-width: 0px; background-image: linear-gradient(rgb(187, 187, 187), rgb(204, 204, 204));"></i>
-<span class="text-small text-bold">${messageCount}</span>
-</a>
-`;
-                } else {
-                    // The icon exists - simply update text
-                    container.querySelector('span').innerText = messageCount; // todo: look for a more robust way
-                }
-            }
-
-            const storedMessageCount = repoData[pullRequestId];
-
-            if (storedMessageCount && messageCount < displayedMessageCount) {
-                // The count decreased
-                // Stored data needs to be updated in certain cases, otherwise an new incoming comment may not be notified
-                dataToUpdate[pullRequestId] = messageCount;
-            }
-
-            if (storedMessageCount === undefined) {
-                // The user has never looked at this PR
-                if (container) {
-                    toggleUnreadStyle(container, true);
-                    toggleMessageNotificationIcon({
-                        container,
-                        isMuted: true,
-                    });
-                }
-            } else {
-                toggleUnreadStyle(container, false);
-                if (messageCount > storedMessageCount) {
-                    // This PR has new messages
-                    toggleMessageNotificationIcon({
-                        show: true,
-                        container,
-                        highlight: messageCount - storedMessageCount >= 5,
-                    });
-                } else if (messageCount > 0) {
-                    // This PR has no new messages
-                    toggleMessageNotificationIcon({
-                        container,
-                        show: false,
-                    });
-                }
-            }
-        });
-
-        if (Object.keys(dataToUpdate).length) {
-            setRepoData({ ...repoData, ...dataToUpdate });
-        }
-    }
-
-    /**
-     * Processing function for the detail pages.
-     * Looks for the count number and stores it
-     */
-    async function processDetailsPage() {
-        const repoData = await getRepoData();
-        const { section, itemId } = getInfoFromUrl();
-
-        let text;
-        let messageCount;
-
-        if (section === 'pull') {
-            text = document.querySelector('#conversation_tab_counter').innerText;
-            messageCount = parseInt(text, 10);
-        } else if (section === 'issues') {
-            text = $('a.author')
-                .map(x => x.parentNode.innerText)
-                .find(x => x.indexOf('comment') > 0);
-            text = /([0-9]+) comment/.exec(text)[1]; // eslint-disable-line prefer-destructuring
-            messageCount = parseInt(text, 10);
-        }
-
-        // Compare current number of messages in the PR to the one stored from the last visit
-        // Update it if they don't match
-        if (Number.isInteger(messageCount)) {
-            const previousMessageCount = repoData[itemId];
-            if (messageCount !== previousMessageCount) {
-                setRepoData({ ...repoData, [itemId]: messageCount });
-            }
-        }
-    }
-
-    const selectorEnum = {
-        LIST: '#js-issues-toolbar',
-        DETAILS: '#discussion_bucket',
-    };
-
-    let refreshIntervalId$1;
-
-    async function applyExtension() {
-        // Element that signals that we are on such or such page
-        let landmarkElement;
-        if (isListPage()) {
-            landmarkElement = await waitForUnmarkedElement(selectorEnum.LIST);
-            markElement(landmarkElement);
-            processListPage();
-            if (!refreshIntervalId$1) {
-                refreshIntervalId$1 = setInterval(
-                    fetchCountData,
-                    REFRESH_INTERVAL_PERIOD$1,
-                );
-            }
-        } else if (isDetailsPage()) {
-            landmarkElement = await waitForUnmarkedElement(selectorEnum.DETAILS, {
-                priority: 'low',
-            });
-            markElement(landmarkElement);
-            processDetailsPage();
-            clearInterval(refreshIntervalId$1);
-            refreshIntervalId$1 = null;
-        } else {
-            clearInterval(refreshIntervalId$1);
-            refreshIntervalId$1 = null;
-        }
-    }
-
-    function toggleUnreadStyle(container, isUnread) {
-        const unreadColor = '#c6cad0';
-        if (isUnread) {
-            container.style.setProperty('color', unreadColor, 'important');
-        } else {
-            container.style.removeProperty('color');
-        }
-    }
-
-    function toggleMessageNotificationIcon({
-        container,
-        highlight,
-        isMuted = false,
-        show = true,
-    }) {
-        const icon = container && container.querySelector('svg');
-        if (!icon) {
-            return
-        }
-        let notification = container.querySelector(
-            '[data-id="unread-notification"]',
-        );
-
-        if (show) {
-            if (!notification) {
-                container.style.position = 'relative'; // eslint-disable-line no-param-reassign
-                // Create element for notification
-                notification = document.createElement('i');
-                notification.dataset.id = 'unread-notification';
-                notification.style.position = 'absolute';
-                notification.style.zIndex = 2;
-                notification.style.borderRadius = '50%';
-                notification.style.color = '#fff';
-                notification.style.width = '8px';
-                notification.style.height = '8px';
-                notification.style.top = '0px';
-                notification.style.left = '9px';
-                notification.style.borderWidth = 0;
-                // Add it to the DOM
-                insertAfter(notification, icon);
-            }
-            if (isMuted) {
-                notification.style.backgroundImage = 'linear-gradient(#CCC,#CCC)'; // Grey
-            } else {
-                notification.style.backgroundImage = highlight
-                    ? 'linear-gradient(#d73a49, #cb2431)' // Red/orange
-                    : 'linear-gradient(#54a3ff,#006eed)'; // Blue
-            }
-        } else if (notification) {
-            // Don't show notification
-            // Remove existing element
-            container.removeChild(notification);
-        }
-    }
-
-    async function getRepoData() {
-        const key = getDataKey();
-        return getStoreData(key)
-    }
-
-    async function setRepoData(data) {
-        const key = getDataKey();
-        return GM.setValue(key, data)
-    }
-
-    function getDataKey() {
-        const { repoOwner, repo } = getInfoFromUrl();
-        return `${repoOwner}/${repo}`
-    }
-
-    /* ---------
-     * index.js
-     * --------- */
     // -------------------
     // STARTUP BLOCK
     // -------------------
 
-    // Process page
-    applyExtension();
-
     // Ensure we rerun the page transform code when the route changes.
-    const pushState = history.pushState;
-    history.pushState = function() {
-      pushState.apply(history, arguments);
-      applyExtension();
+    const { pushState } = history;
+    history.pushState = async function customPushState(...args) {
+        pushState.apply(history, args);
+        // Stop timers and pollers related to previous page
+        clearActiveIntervals();
+
+        // Apply extension
+        const pageId = await waitForPageToLoad();
+        applyScripts(pageId);
     };
 
     // Handle browser navigation changes (previous/forward button)
-    window.onpopstate = function(event) {
-      if (isListPage()) {
-        fetchCountData();
-        if (!refreshIntervalId) {
-          refreshIntervalId = setInterval(fetchCountData, REFRESH_INTERVAL_PERIOD);
-        }
-      }
+    window.onpopstate = function onpopstate() {
+        clearActiveIntervals();
+
+        // TODO: restart intervals, do NOT process DOM, do an immediate poll/interval
     };
+
+    // Store intervals to clear them later
+    let intervals = [];
+    function clearActiveIntervals() {
+        intervals.forEach(intervalId => clearInterval(intervalId));
+        intervals = [];
+    }
+
+    function applyScripts(pageId) {
+        // Get the configs applying to the current page
+        const configsForCurrentPage = configs
+            .map(config => config[pageId])
+            .filter(x => !!x);
+
+        // Start processing and intervals
+        configsForCurrentPage.forEach(
+            ({ process = Function.prototype, interval }) => {
+                process();
+
+                if (interval) {
+                    const { frequency, callback } = interval;
+                    intervals.push(setInterval(callback, frequency));
+                }
+            },
+        );
+
+        // Start page polling
+        startPolling(
+            configsForCurrentPage.map(config => config.poll).filter(x => !!x),
+        );
+    }
+
+    function startPolling(pollConfigs) {
+        // Group similar polls together
+        const processedPollConfigs = pollConfigs.reduce((res, pollConfig) => {
+            const { url, parse, frequency } = pollConfig;
+            const existingPoll = res.find(poll => poll.url === url);
+            let callbacks = [parse];
+            if (existingPoll && existingPoll.frequency === frequency) {
+                callbacks = [parse, ...existingPoll.callbacks];
+            }
+            return [{ ...pollConfig, callbacks }, ...res]
+        }, []);
+
+        // Starts polls
+        processedPollConfigs.forEach(async pollConfig => {
+            const { callbacks, frequency, url } = pollConfig;
+
+            intervals.push(
+                setTimeout(async () => {
+                    const response = await getPage(
+                        url === 'self' ? window.location.href : url,
+                    );
+                    if (response && response.responseText) {
+                        callbacks.forEach(callback =>
+                            callback(response.responseText),
+                        );
+                    }
+                }, frequency),
+            );
+        });
+    }
+
+    // Process page
+    waitForPageToLoad().then(pageId => {
+        applyScripts(pageId);
+    });
 
 }());

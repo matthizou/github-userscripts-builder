@@ -1,12 +1,12 @@
 const pathLib = require('path')
-var fs = require('fs')
-var { EOL } = require('os')
+const fs = require('fs')
+const { EOL } = require('os')
 
 export default function addMetadataBlock(metadataFileName = 'metadata.json') {
   return {
     name: 'add-metadata-block',
 
-    generateBundle(outputOptions, bundle, isWrite) {
+    generateBundle(outputOptions, bundle) {
       console.log('***Add meta data*****')
       const bundleNames = Object.keys(bundle)
       bundleNames.forEach(bundleName => {
@@ -35,7 +35,7 @@ export default function addMetadataBlock(metadataFileName = 'metadata.json') {
           const userscriptFullPath = bundleFullPath.replace(/\.js$/, '.user.js')
           try {
             // Write in file
-            console.log('Generating:' + userscriptFullPath)
+            console.log(`Generating:${userscriptFullPath}`)
             fs.writeFileSync(userscriptFullPath, newCode)
             console.log('Success')
           } catch (err) {
@@ -48,7 +48,7 @@ export default function addMetadataBlock(metadataFileName = 'metadata.json') {
         }
 
         console.log(metadataFilePath)
-        //const txtFile = fs.readFileSync(path, 'utf8');
+        // const txtFile = fs.readFileSync(path, 'utf8');
       })
     },
   }
